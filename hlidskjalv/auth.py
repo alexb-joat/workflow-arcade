@@ -24,12 +24,14 @@ gets by pairing and keeps until the session runs out:
 from __future__ import annotations
 
 import base64
+import contextlib
 import hashlib
 import hmac
 import json
 import os
 import secrets
 import struct
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -52,13 +54,23 @@ def new_token() -> str:
     return secrets.token_urlsafe(32)
 
 
+_write_lock = threading.Lock()
+
+
 def write_private(path: Path, text: str) -> None:
-    """Write a file only its owner can read, atomically."""
-    tmp = path.with_name(path.name + ".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(text)
-    os.replace(tmp, path)
+    """Write a file only its owner can read, atomically. Writes in this process take turns, and each
+    uses its own temporary file, so two saves of one file (two requests, or the CLI beside the server)
+    can't move each other's file away; the last one wins."""
+    with _write_lock:
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")  # mode 0600
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(text)
+            os.replace(tmp, path)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
 
 
 def _same(a, b: str | None) -> bool:

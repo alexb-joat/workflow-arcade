@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+**Fixed**
+- Two saves of the same file at the same moment (for example two password changes) could make one of them fail. Each save now has its own temporary file, and saves take turns.
+
 ## 0.4.0 (2026-10-30)
 
 **Trioditis 0.4 on the page**

@@ -14,7 +14,7 @@ from unittest import mock
 
 from hlidskjalv import terminal as term
 from hlidskjalv.__main__ import HOOKS, check_folder
-from hlidskjalv.auth import Owner, issue_pair_code, rotate_key, totp_code
+from hlidskjalv.auth import Owner, issue_pair_code, rotate_key, totp_code, write_private
 from hlidskjalv.redact import redact
 from hlidskjalv.server import XP_RULES, Hub, Progress, load_history, read_session, serve, xp_of
 from hlidskjalv.settings import Settings, SettingsError, defaults, merge
@@ -778,6 +778,31 @@ class SettingsTest(unittest.TestCase):
     def test_merge_reports_where(self):
         with self.assertRaisesRegex(SettingsError, "look.background.angle"):
             merge(defaults(), {"look": {"background": {"angle": 999}}})
+
+
+class WritePrivateTest(unittest.TestCase):
+    def test_saves_of_one_file_at_the_same_time_never_fail(self):
+        # Two requests once saved the password file at once. With one shared temporary name, one save
+        # moved the other's file away and that request failed (FileNotFoundError, seen on CI).
+        with tempfile.TemporaryDirectory() as d:
+            target, errors = Path(d) / "password", []
+
+            def save(i):
+                for _ in range(200):
+                    try:
+                        write_private(target, f"value {i}")
+                    except OSError as e:
+                        errors.append(e)
+            threads = [threading.Thread(target=save, args=(i,)) for i in range(8)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            self.assertEqual(errors, [])
+            self.assertIn(target.read_text(encoding="utf-8"), {f"value {i}" for i in range(8)})
+            self.assertEqual([p.name for p in Path(d).iterdir()], ["password"])  # no temporary file left
+            if os.name == "posix":
+                self.assertEqual(target.stat().st_mode & 0o777, 0o600)
 
 
 class WriteApiTest(unittest.TestCase):

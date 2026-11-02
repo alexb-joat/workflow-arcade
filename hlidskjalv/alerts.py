@@ -33,6 +33,7 @@ import threading
 import time
 from pathlib import Path
 
+from .auth import write_private
 from .programs import which
 from .redact import redact
 
@@ -88,11 +89,7 @@ class Alerter:
                 f.write(json.dumps({**ev, "ts": time.time()}, ensure_ascii=False) + "\n")
             if self.history.stat().st_size > HISTORY_MAX_LINES * 1500:  # keep the newest half
                 lines = self.history.read_text(encoding="utf-8", errors="replace").splitlines()[-HISTORY_MAX_LINES // 2:]
-                tmp = self.history.with_name(self.history.name + ".tmp")
-                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-                with os.fdopen(fd, "w", encoding="utf-8") as f:
-                    f.write("\n".join(lines) + "\n")
-                os.replace(tmp, self.history)
+                write_private(self.history, "\n".join(lines) + "\n")
         except OSError:
             pass
 
@@ -127,11 +124,7 @@ class Acks:
     def add(self, ids) -> list[str]:
         new = [str(i)[:40] for i in ids if isinstance(i, str)][:1000]
         self.ids = list(dict.fromkeys(self.ids + new))[-5000:]
-        tmp = self.path.with_name(self.path.name + ".tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(self.ids, f)
-        os.replace(tmp, self.path)
+        write_private(self.path, json.dumps(self.ids))
         return self.ids
 
 
@@ -348,11 +341,7 @@ def remember_expected(home: Path, path: Path, data: bytes) -> None:
     except (OSError, ValueError):
         known = {}
     known[str(path)] = _sha(data)
-    tmp = f.with_name(f.name + ".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        json.dump(known, fh)
-    os.replace(tmp, f)
+    write_private(f, json.dumps(known))
 
 
 # ---------------------------------------------------------------- system journal
